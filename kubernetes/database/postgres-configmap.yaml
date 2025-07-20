@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: chorrus
+data:
+  POSTGRES_DB: chorrus
+  POSTGRES_USER: chorrus_user
+  POSTGRES_PASSWORD: chorrus_password

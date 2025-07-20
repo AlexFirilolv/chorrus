@@ -1,0 +1,105 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  POSTGRES_DB: chorrus_test
+  POSTGRES_USER: chorrus_user
+  POSTGRES_PASSWORD: chorrus_password
+  DATABASE_URL: "postgresql://chorrus_user:chorrus_password@postgres:5432/chorrus_test"
+
+# Backend tests
+backend-test:
+  stage: test
+  image: python:3.11-slim
+  services:
+    - postgres:15-alpine
+  variables:
+    POSTGRES_DB: chorrus_test
+    POSTGRES_USER: chorrus_user
+    POSTGRES_PASSWORD: chorrus_password
+  before_script:
+    - cd backend
+    - pip install -r requirements.txt
+    - pip install pytest pytest-asyncio httpx
+  script:
+    - pytest tests/ -v
+  cache:
+    paths:
+      - backend/.venv/
+
+# Frontend tests
+frontend-test:
+  stage: test
+  image: node:18-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run test -- --watchAll=false --passWithNoTests
+  cache:
+    paths:
+      - frontend/node_modules/
+
+# Backend build
+backend-build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - cd backend
+    - docker build -t $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/backend:latest
+    - docker push $CI_REGISTRY_IMAGE/backend:latest
+  only:
+    - main
+
+# Frontend build
+frontend-build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  script:
+    - cd frontend
+    - docker build -t $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA
+    - docker tag $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/frontend:latest
+    - docker push $CI_REGISTRY_IMAGE/frontend:latest
+  only:
+    - main
+
+# Deploy to k3s
+deploy-k3s:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo $KUBECONFIG | base64 -d > ~/.kube/config
+    - kubectl config use-context default
+  script:
+    - cd kubernetes
+    - kubectl apply -f namespace.yaml
+    - kubectl apply -f database/
+    - kubectl apply -f backend/
+    - kubectl apply -f frontend/
+    - kubectl apply -f ingress/
+    - kubectl apply -f monitoring/
+    - kubectl set image deployment/backend backend=$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA -n chorrus
+    - kubectl set image deployment/frontend frontend=$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA -n chorrus
+    - kubectl rollout status deployment/backend -n chorrus
+    - kubectl rollout status deployment/frontend -n chorrus
+  only:
+    - main
+  environment:
+    name: production
+    url: https://chorrus.yourdomain.com
