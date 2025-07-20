@@ -8,7 +8,7 @@ class ChoreBase(BaseModel):
     description: Optional[str] = None
     due_date: date
     is_recurring: bool = False
-    recurrence_interval: Optional[str] = Field(None, regex="^(daily|weekly|bi-weekly)$")
+    recurrence_interval: Optional[str] = Field(None, pattern="^(daily|weekly|bi-weekly)$")
 
 class ChoreCreate(ChoreBase):
     assigned_user_ids: Optional[List[UUID]] = []
@@ -30,7 +30,7 @@ class ChoreUpdate(BaseModel):
     description: Optional[str] = None
     due_date: Optional[date] = None
     is_recurring: Optional[bool] = None
-    recurrence_interval: Optional[str] = Field(None, regex="^(daily|weekly|bi-weekly)$")
+    recurrence_interval: Optional[str] = Field(None, pattern="^(daily|weekly|bi-weekly)$")
 
 # Import here to avoid circular imports
 from .chore_assignment import ChoreAssignmentResponse
